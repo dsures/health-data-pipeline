@@ -46,15 +46,25 @@ def init_database(database: str) -> None:
             cursor.execute(f"CREATE SCHEMA IF NOT EXISTS {database}.{schema}")
             logger.info(f"Schema {database}.{schema} created")
 
-        # Create raw table — 3 columns only
+        # Create raw table for patients
         cursor.execute(f"""
-            CREATE TABLE IF NOT EXISTS {database}.raw.raw_raw_patient (
+            CREATE TABLE IF NOT EXISTS {database}.raw.patient (
                 loaded_at           TIMESTAMP_TZ DEFAULT CURRENT_TIMESTAMP(),
                 source_sheet_id     VARCHAR(255),
                 raw_data            VARIANT
             )
         """)
-        logger.info(f"Table {database}.raw.raw_raw_patient created")
+        logger.info(f"Table {database}.raw.patient created")
+
+        # Create raw table for visits
+        cursor.execute(f"""
+            CREATE TABLE IF NOT EXISTS {database}.raw.visit (
+                loaded_at           TIMESTAMP_TZ DEFAULT CURRENT_TIMESTAMP(),
+                source_sheet_id     VARCHAR(255),
+                raw_data            VARIANT
+            )
+        """)
+        logger.info(f"Table {database}.raw.visit created")
 
         conn.commit()
         logger.info(f"Successfully initialised {database}")

@@ -1,0 +1,39 @@
+version: 2
+
+models:
+  - name: uat_visit
+    description: >
+      UAT layer — visit/encounter validation.
+      Extracts from raw JSON, checks visit_date validity and cost sign.
+
+    columns:
+      - name: visit_id
+        description: "Primary key for a single visit/encounter."
+        tests:
+          - unique:
+              config:
+                severity: error
+          - not_null:
+              config:
+                severity: error
+
+      - name: patient_id
+        description: "FK to dim_patient — must match an existing patient."
+        tests:
+          - not_null:
+              config:
+                severity: error
+
+      - name: visit_date
+        description: "Date of visit. NULL if future/invalid — triggers WARN below."
+        tests:
+          - not_null:
+              config:
+                severity: warn
+
+      - name: cost
+        description: "Cost of visit. NULL if negative in source — triggers WARN below."
+        tests:
+          - not_null:
+              config:
+                severity: warn

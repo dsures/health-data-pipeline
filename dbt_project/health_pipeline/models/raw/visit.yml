@@ -1,0 +1,29 @@
+version: 2
+
+sources:
+  - name: raw
+    database: HEALTH_DB_DEV
+    schema: raw
+    tables:
+      - name: visit
+        description: >
+          Raw visit/encounter data loaded from the 'visits' Google Sheet.
+        columns:
+          - name: loaded_at
+            tests:
+              - not_null:
+                  config:
+                    severity: error
+          - name: raw_data
+            tests:
+              - not_null:
+                  config:
+                    severity: error
+              - json_key_not_null:
+                  key: patient_id
+                  config:
+                    severity: error
+              - json_key_not_null:
+                  key: visit_date
+                  config:
+                    severity: error
