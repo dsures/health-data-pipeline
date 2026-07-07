@@ -1,5 +1,3 @@
-# This yml file defines all the tests we will conduct on RAW schema
-
 version: 2
 
 sources:
@@ -7,7 +5,7 @@ sources:
     database: HEALTH_DB_DEV
     schema: raw
     tables:
-      - name: raw_raw_patient
+      - name: patient
         description: >
           Raw patient data loaded from Google Sheets.
           Stored as JSON with metadata columns loaded_at and source_sheet_id.
@@ -18,14 +16,12 @@ sources:
               - not_null:
                   config:
                     severity: error
-
           - name: source_sheet_id
             description: "Google Sheet ID the data was sourced from"
             tests:
               - not_null:
                   config:
                     severity: error
-
           - name: raw_data
             description: "Raw JSON payload from Google Sheets"
             tests:

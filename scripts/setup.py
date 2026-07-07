@@ -97,7 +97,7 @@ def main():
 
     print("\n" + "=" * 50)
     print("Setup complete! Run the pipeline with:")
-    print("  python ingestion/load_data.py dev")
+    print("  python ingestion/load_patient.py dev")  
     print("  cd dbt_project/health_pipeline")
     print("  dbt run --target dev")
     print("  dbt test --target dev")

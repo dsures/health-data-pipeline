@@ -23,7 +23,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Load environment variables
-load_dotenv()
+load_dotenv(override=True)
 
 # Constants
 SCOPES = [
@@ -32,10 +32,10 @@ SCOPES = [
 ]
 
 
-def get_google_sheet(sheet_name: str):
-    """Extract data from Google Sheet and return as DataFrame and sheet ID."""
+def get_google_sheet(sheet_name: str, worksheet_name: str = None):
+    """Extract data from a Google Sheet (optionally a specific tab) and return as DataFrame and sheet ID."""
     try:
-        logger.info(f"Connecting to Google Sheet: {sheet_name}")
+        logger.info(f"Connecting to Google Sheet: {sheet_name}" + (f" (tab: {worksheet_name})" if worksheet_name else ""))
 
         creds = Credentials.from_service_account_file(
             os.getenv('GCP_SERVICE_ACCOUNT_PATH'),
@@ -45,7 +45,9 @@ def get_google_sheet(sheet_name: str):
         client = gspread.authorize(creds)
         spreadsheet = client.open(sheet_name)
         sheet_id = spreadsheet.id
-        df = pd.DataFrame(spreadsheet.sheet1.get_all_records())
+
+        worksheet = spreadsheet.worksheet(worksheet_name) if worksheet_name else spreadsheet.sheet1
+        df = pd.DataFrame(worksheet.get_all_records())
 
         logger.info(f"Successfully extracted {len(df)} rows from Google Sheet")
         return df, sheet_id
@@ -69,14 +71,14 @@ def get_snowflake_connection(database: str = None):
 
 
 def load_to_raw(df: pd.DataFrame, conn, sheet_id: str) -> None:
-    """Load Google Sheet data into raw.raw_raw_patient as JSON."""
+    """Load Google Sheet data into raw.patient as JSON."""
     try:
-        logger.info("Loading data to raw.raw_raw_patient...")
+        logger.info("Loading data to raw.patient...")
 
         loaded_at = datetime.now(timezone.utc).isoformat()
         cursor = conn.cursor()
 
-        cursor.execute("TRUNCATE TABLE raw.raw_raw_patient")
+        cursor.execute("TRUNCATE TABLE raw.patient")
 
         def serialize_row(row):
             """Convert row to JSON safe dict."""
@@ -94,7 +96,7 @@ def load_to_raw(df: pd.DataFrame, conn, sheet_id: str) -> None:
         for _, row in df.iterrows():
             raw_json = json.dumps(serialize_row(row))
             cursor.execute(
-                "INSERT INTO raw.raw_raw_patient (loaded_at, source_sheet_id, raw_data) "
+                "INSERT INTO raw.patient (loaded_at, source_sheet_id, raw_data) "
                 "SELECT %s, %s, PARSE_JSON(%s)",
                 (loaded_at, sheet_id, raw_json)
             )
@@ -103,7 +105,7 @@ def load_to_raw(df: pd.DataFrame, conn, sheet_id: str) -> None:
         conn.commit()
         cursor.close()
 
-        logger.info(f"Successfully loaded {count} rows into raw.raw_raw_patient")
+        logger.info(f"Successfully loaded {count} rows into raw.patient")
 
     except Exception as e:
         logger.error(f"Failed to load data to raw: {e}")
@@ -121,7 +123,7 @@ def run_pipeline(target: str = 'dev'):
     )
 
     # Extract
-    df, sheet_id = get_google_sheet(os.getenv('GOOGLE_SHEET_NAME'))
+    df, sheet_id = get_google_sheet(os.getenv('GOOGLE_SHEET_NAME'), worksheet_name='patient')
 
     # Connect to Snowflake
     conn = get_snowflake_connection(database=database)

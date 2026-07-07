@@ -1,10 +1,12 @@
-# Health Data Pipeline - Promptly Health Technical Assessment
+# Health Data Pipeline 
 
-A production-grade ELT pipeline that ingests patient data from Google Sheets, transforms it into a standardised **FHIR Patient** format, and loads it into Snowflake inclusive of orchestration.
+A production-grade ELT pipeline that ingests patient and visit data from Google Sheets, transforms it into a standardised **FHIR Patient** format plus a **star schema** (Dim_Patient / Fact_Visits) for analytics, and loads it into Snowflake inclusive of orchestration.
 
 ---
 
-The raw data for this project is available in this [Google Sheets file](https://docs.google.com/spreadsheets/d/1zZA8j-MR3osXR9-jgz9q-m3_sdrFDi72B4d3BBMTfrs/edit?usp=sharing), where the original CSV has been uploaded.
+The raw data for this project lives in a single [Google Sheets file](https://docs.google.com/spreadsheets/d/1zZA8j-MR3osXR9-jgz9q-m3_sdrFDi72B4d3BBMTfrs/edit?usp=sharing) named `patient_data`, split across two tabs:
+- **patient** — original patient demographics CSV
+- **visits** — synthetic visit/encounter data (generated via `scripts/generate_visits.py`, keyed to existing patient IDs)
 
 ## Architecture
 
@@ -14,7 +16,7 @@ Google Sheets: Raw Patient Data CSV
      ▼
 ┌─────────────────────────────────────────────────────┐
 │  **RAW Schema**                                     │
-│  raw_raw_patient (3 columns)                        │
+│  raw.patient | raw.visit (3 columns each)            
 │  loaded_at | source_sheet_id | raw_data (VARIANT)   │
 │  Tests: metadata not null, required JSON keys       │                   
 └─────────────────────────────────────────────────────┘
@@ -22,7 +24,7 @@ Google Sheets: Raw Patient Data CSV
      ▼
 ┌─────────────────────────────────────────────────────┐
 │  **UAT Schema**                                     │
-│  uat_patient                                        │
+│  uat_patient | uat_visit                            │
 │  Extracts from JSON, applies FHIR R4 mapping        │
 │  Tests: patient ID unique, gender required binding, │
 │         telecom valid, marital status v3 codes      │
@@ -31,9 +33,14 @@ Google Sheets: Raw Patient Data CSV
      ▼
 ┌─────────────────────────────────────────────────────┐
 │  **CONSUMPTION Schema**                             │
-│  consumption_fhir_patient                           │
-│  Final FHIR    Patient resource                     │
-│  PII masked, telecom as ContactPoint array          │
+│  consumption_fhir_patient   — FHIR R4 export        │
+│    PII masked, telecom as ContactPoint array        │
+│                                                     │
+│  dim_patient  ─┐  Star schema (BI/analytics use)    │
+│                ├─ flattened PII-masked dimension,   │
+│  fact_visits  ─┘  incremental merge on patient_id;  │
+│    one row per visit, FK to dim_patient.patient_id, │
+│    tested via relationships test                    │   
 └─────────────────────────────────────────────────────┘
      │
      ▼
@@ -66,31 +73,41 @@ Google Sheets: Raw Patient Data CSV
 ```
 health-data-pipeline/
 ├── ingestion/
-│   └── load_data.py                        # Google Sheet → Snowflake raw
+│   ├── load_patient.py                     # Google Sheet (patient tab) → Snowflake raw
+│   └── load_visits.py                      # Google Sheet (visits tab) → Snowflake raw
 ├── dbt_project/
 │   └── health_pipeline/
 │       ├── models/
 │       │   ├── raw/
-│       │   │   └── schema.yml              # Raw layer tests
+│       │   │   ├── patient.yml             # raw.patient source + tests
+│       │   │   └── visit.yml               # raw.visit source + tests
 │       │   ├── uat/
-│       │   │   ├── schema.yml              # UAT FHIR compliance tests
-│       │   │   └── uat_patient.sql         # FHIR R4 mapping
+│       │   │   ├── uat_patient.sql         # FHIR R4 mapping
+│       │   │   ├── uat_patient.yml
+│       │   │   ├── uat_visit.sql           # visit type/validity checks
+│       │   │   └── uat_visit.yml
 │       │   └── consumption/
-│       │       └── consumption_fhir_patient.sql
+│       │       ├── consumption_fhir_patient.sql   # FHIR R4 export (untouched)
+│       │       ├── consumption_fhir_patient.yml
+│       │       ├── dim_patient.sql         # star schema dimension (incremental merge)
+│       │       ├── dim_patient.yml
+│       │       ├── fact_visits.sql         # star schema fact, FK to dim_patient
+│       │       └── fact_visits.yml
 │       ├── macros/
 │       │   ├── create_schemas.sql          # Auto-creates all schemas
 │       │   ├── generate_schema_name.sql
 │       │   ├── test_json_key_not_null.sql  # Custom test macro
 │       ├── packages.yml
 │       ├── dbt_project.yml
-│       └── profiles.yml                   # git ignored
+│       └── profiles.yml                    # env_var()-based, safe to commit
 ├── orchestration/
-│   ├── pipeline_flow.py                   # Prefect flow
+│   ├── pipeline_flow.py                    # Prefect flow (ingest patient + visits → run → test)
 ├── scripts/
-│   ├── init_db.py                         # One-time Snowflake init
-│   └── setup.py                           # Full environment setup
-├── credentials/                           # git ignored
-├── .env                                   # git ignored
+│   ├── init_db.py                          # One-time Snowflake init (raw.patient, raw.visit)
+│   ├── generate_visits.py                  # Synthetic visit data generator
+│   └── setup.py                            # Full environment setup
+├── credentials/                            # git ignored
+├── .env                                    # git ignored
 ├── .gitignore
 ├── prefect.yaml
 ├── requirements.txt
@@ -98,6 +115,19 @@ health-data-pipeline/
 ```
 
 ---
+
+---
+
+## Star Schema (Analytics Layer)
+
+Alongside the FHIR-compliant export (`consumption_fhir_patient`), the consumption layer also builds a small star schema for BI/analytics use:
+
+- **`dim_patient`** — one row per patient, flattened (atomic `telecom_phone`/`telecom_email` columns rather than a nested array), PII-masked, materialized incrementally via `merge` on `patient_id` (upserts changed patients rather than a full rebuild).
+- **`fact_visits`** — one row per patient visit, grain = `visit_id`, FK to `dim_patient.patient_id`, carries measures (`cost`, `duration_minutes`) and descriptive attributes (`visit_type`, `provider_name`, `diagnosis_code`).
+
+The join is enforced with a dbt `relationships` test (`fact_visits.patient_id` → `dim_patient.patient_id`), so a visit referencing an unknown patient fails the test suite rather than silently existing.
+
+`fact_visits` currently runs as a full-refresh table since the visit dataset is small and static; it's structured so that flipping to `is_incremental()` with a `visit_date` bookmark filter is a config-only change once real, continuously-arriving visit data replaces the synthetic set.
 
 ---
 
@@ -117,6 +147,8 @@ health-data-pipeline/
 | `phone_number` key present | Required for Patient.telecom | Business rule |
 | `email` key present | Required for Patient.telecom | Business rule |
 | `marital_status` key present | Required for Patient.maritalStatus | Business rule |
+| `patient_id` key present (visits) | Required FK to patient | Business rule |
+| `visit_date` key present (visits) | Required for Fact_Visits grain | Business rule |
 
 ### UAT Layer — FHIR R4 compliance checks
 
@@ -133,6 +165,18 @@ health-data-pipeline/
 | `email_hash` not null | WARN | 0..* cardinality |
 | `marital_status_code` in M/S/D/W/UNK | WARN | [v3-MaritalStatus](https://hl7.org/fhir/R4/valueset-marital-status.html) Extensible binding |
 | `insurance_number_hash` not null | WARN | Pipeline rule |
+| `visit_id` unique/not null | ERROR | Fact_Visits grain |
+| `patient_id` (visit) not null | ERROR | Fact_Visits FK integrity |
+| `visit_date` not null | WARN | Pipeline rule |
+| `cost` not null (negative → NULL) | WARN | Pipeline rule |
+
+### Consumption Layer — Star schema integrity
+
+| Test | Severity | Purpose |
+|---|---|---|
+| `dim_patient.patient_id` unique/not null | ERROR | Dimension grain |
+| `fact_visits.visit_id` unique/not null | ERROR | Fact grain |
+| `fact_visits.patient_id` → `dim_patient.patient_id` relationships | ERROR | Star schema join integrity |
 
 ---
 
@@ -145,7 +189,7 @@ PII fields are protected at the **UAT layer** before reaching consumption:
 | `first_name`, `last_name` | MD5 hashed |
 | `email`, `phone_number` | MD5 hashed |
 | `insurance_number` | MD5 hashed |
-| `birth_date` | Generalised to year only |
+| `birth_date` | Generalised to year only (FHIR export) / retained as date (star schema) |
 | `address`, `full_name` | MD5 hashed |
 
 ---

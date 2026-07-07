@@ -5,7 +5,7 @@
 */
 
 WITH source AS (
-    SELECT * FROM {{ source('raw', 'raw_raw_patient') }}
+    SELECT * FROM {{ source('raw', 'patient') }}   -- was: 'raw_raw_patient'
 ),
 
 extracted AS (

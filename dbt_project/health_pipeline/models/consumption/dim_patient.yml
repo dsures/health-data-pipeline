@@ -1,0 +1,41 @@
+version: 2
+
+models:
+  - name: dim_patient
+    description: "Dim_Patient: patient dimension for star-schema BI use, flattened for joins to fact_visits. Independent of consumption_fhir_patient."
+    columns:
+      - name: patient_id
+        data_type: varchar(255)
+        tests:
+          - unique
+          - not_null
+
+      - name: full_name
+        data_type: varchar(200)
+
+      - name: birth_date
+        data_type: date
+
+      - name: gender
+        data_type: varchar(20)
+
+      - name: address
+        data_type: varchar(255)
+
+      - name: marital_status
+        data_type: varchar(20)
+
+      - name: insurance_number
+        data_type: varchar(255)
+
+      - name: insurance_provider
+        data_type: varchar(255)
+
+      - name: nationality
+        data_type: varchar(20)
+
+      - name: telecom_phone
+        data_type: varchar(255)
+
+      - name: telecom_email
+        data_type: varchar(255)

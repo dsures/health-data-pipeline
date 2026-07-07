@@ -1,0 +1,22 @@
+version: 2
+
+models:
+  - name: fact_visits
+    description: "Fact_Visits: one row per patient visit, joins to dim_patient on patient_id."
+    columns:
+      - name: visit_id
+        data_type: varchar(255)
+        tests:
+          - unique
+          - not_null
+
+      - name: patient_id
+        data_type: varchar(255)
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_patient')
+              field: patient_id
+
+      - name: cost
+        data_type: float

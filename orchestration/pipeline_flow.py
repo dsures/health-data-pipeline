@@ -78,7 +78,7 @@ def ingest_data():
     logger.info("Starting data ingestion...")
 
     result = subprocess.run(
-        [sys.executable, str(ROOT_DIR / "ingestion" / "load_data.py"), "dev"],
+        [sys.executable, str(ROOT_DIR / "ingestion" / "load_patient.py"), "dev"],
         capture_output=True,
         text=True,
         cwd=ROOT_DIR
@@ -116,6 +116,22 @@ def run_dbt():
 
     logger.info("dbt models completed successfully")
 
+@task(name="ingest_visits", retries=2, retry_delay_seconds=30)
+def ingest_visits():
+    logger = get_run_logger()
+    logger.info("Starting visit ingestion...")
+
+    result = subprocess.run(
+        [sys.executable, str(ROOT_DIR / "ingestion" / "load_visits.py"), "dev"],
+        capture_output=True, text=True, cwd=ROOT_DIR
+    )
+    logger.info(result.stdout)
+
+    if result.returncode != 0:
+        logger.error(result.stderr)
+        raise Exception(f"Visit ingestion failed: {result.stderr}")
+
+    logger.info("Visit ingestion completed successfully")
 
 @task(name="run_dbt_tests", retries=1, retry_delay_seconds=10)
 def run_dbt_tests():
@@ -153,6 +169,7 @@ def health_pipeline():
     load_env_vars()
     lint_sql()
     ingest_data()
+    ingest_visits() 
     run_dbt()
     run_dbt_tests()
 
