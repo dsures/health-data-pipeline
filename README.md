@@ -1,4 +1,4 @@
-# Health Data Pipeline - Promptly Health 
+# Health Data Pipeline 
 
 A production-grade ELT pipeline that ingests patient data from Google Sheets, transforms it into a standardised **FHIR Patient** format, and loads it into Snowflake inclusive of orchestration.
 
